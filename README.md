@@ -1,6 +1,6 @@
 # flutter_zxing
 
-A barcode and QR code scanner based on [ZXing C++](https://github.com/nu-book/zxing-cpp) library natively in Flutter with Dart FFI.
+A barcode and QR code scanner based on [ZXing C++](https://github.com/nu-book/zxing-cpp) library natively in Flutter with Dart 
 
 ## Demo Screenshots
 <pre>

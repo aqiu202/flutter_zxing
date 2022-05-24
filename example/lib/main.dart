@@ -2,6 +2,8 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_zxing/flutter_zxing.dart';
+import 'package:flutter_zxing/zxing_camera.dart';
+import 'package:flutter_zxing/zxing_coder.dart';
 
 void main() {
   runApp(const MyApp());
@@ -52,14 +54,14 @@ class _DemoPageState extends State<DemoPage> {
         body: TabBarView(
           physics: const NeverScrollableScrollPhysics(),
           children: [
-            ReaderWidget(
+            ZXingCamera(
               onScan: (value) {
                 showMessage(context, 'Scanned: ${value.textString ?? ''}');
               },
             ),
             ListView(
               children: [
-                WriterWidget(
+                ZXingCoder(
                   onSuccess: (result, bytes) {
                     setState(() {
                       createdCodeBytes = bytes;

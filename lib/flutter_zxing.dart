@@ -10,8 +10,6 @@ import 'package:flutter/services.dart';
 import 'generated_bindings.dart';
 
 export 'generated_bindings.dart';
-export 'reader_widget.dart';
-export 'writer_widget.dart';
 export 'image_converter.dart';
 export 'scanner_overlay.dart';
 
