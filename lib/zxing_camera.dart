@@ -5,26 +5,25 @@ import 'dart:math';
 
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_beep/flutter_beep.dart';
-import 'package:flutter_zxing/event_listener.dart';
 
+import 'event_listener.dart';
 import 'flutter_zxing.dart';
 
 class ZXingCamera extends StatefulWidget {
   ZXingCamera(
       {Key? key,
       required this.onScan,
+      this.onControllerCreated,
       this.codeFormat = Format.Any,
-      this.beep = false,
+      this.beep = true,
       this.showCroppingRect = true,
-      this.scanPeriod = const Duration(milliseconds: 200), // 500ms delay
-      this.resolveDelay = const Duration(milliseconds: 800), // 500ms delay
+      this.scanPeriod = const Duration(milliseconds: 200), // 200ms delay
+      this.resolveDelay = const Duration(milliseconds: 800), // 800ms delay
       this.cropPercent = 0.6, // 60% of the screen
       this.resolution = ResolutionPreset.high,
       this.fullScreen = false,
-      this.controller,
-      this.onControllerCreated,
+      this.cameraController,
       this.scannerOverlayWidget,
       this.scannerOverlay})
       : super(key: key);
@@ -34,7 +33,9 @@ class ZXingCamera extends StatefulWidget {
   }
 
   static List<CameraDescription>? cameras;
-  final void Function(CodeResult) onScan;
+
+  final Function(CodeResult) onScan;
+  final Function(CameraController)? onControllerCreated;
   final int codeFormat;
   final bool beep;
   final bool showCroppingRect;
@@ -42,23 +43,25 @@ class ZXingCamera extends StatefulWidget {
   final Duration resolveDelay;
   final double cropPercent;
   final ResolutionPreset resolution;
-  void Function(CameraController)? onControllerCreated;
+  final bool fullScreen;
   Widget? scannerOverlayWidget;
   ScannerOverlay? scannerOverlay;
-  CameraController? controller;
-  bool fullScreen;
+  CameraController? cameraController;
 
   @override
   State<ZXingCamera> createState() => _ZXingCameraState();
 }
 
-class _ZXingCameraState extends State<ZXingCamera> {
+class _ZXingCameraState extends State<ZXingCamera>
+    with WidgetsBindingObserver, TickerProviderStateMixin {
+  CameraController? controller;
+
   bool get isAndroid => Platform.isAndroid;
 
   // true when code detecting is ongoing
   bool _isProcessing = false;
 
-  /// Instance of [IsolateUtils]
+  /// Instance of [EventListener]
   late EventListener eventListener;
 
   @override
@@ -68,65 +71,82 @@ class _ZXingCameraState extends State<ZXingCamera> {
   }
 
   void initStateAsync() async {
+    WidgetsBinding.instance.addObserver(this);
+    controller = widget.cameraController;
+    if (controller == null) {
+      ZXingCamera.cameras ??= await availableCameras();
+      setState((){
+        _onNewCameraSelected(ZXingCamera.cameras!.first);
+      });
+    } else {
+      controller?.startImageStream(_processCameraImage);
+      widget.onControllerCreated?.call(controller!);
+    }
     // Spawn a new isolate
     eventListener = EventListener();
     await eventListener.start();
-    SystemChannels.lifecycle.setMessageHandler((message) async {
-      debugPrint(message);
-      if (!widget.controller!.value.isInitialized) {
-        return;
-      }
-      if (mounted) {
-        if (message == AppLifecycleState.paused.toString()) {
-          widget.controller?.pausePreview();
-        }
-        if (message == AppLifecycleState.resumed.toString()) {
-          widget.controller?.resumePreview();
-        }
-      }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final CameraController? cameraController = controller;
+
+    // App state changed before we got the chance to initialize.
+    if (cameraController == null || !cameraController.value.isInitialized) {
       return;
-    });
-  }
+    }
 
-  void _notPresentThenNewController() {
-    widget.controller ??= CameraController(
-      ZXingCamera.cameras!.first,
-      widget.resolution,
-      enableAudio: false,
-      imageFormatGroup:
-          isAndroid ? ImageFormatGroup.yuv420 : ImageFormatGroup.bgra8888
-    );
-  }
-
-  Future<void> _initController() async {
-    if (!widget.controller!.value.isInitialized) {
-      await widget.controller?.initialize();
+    if (state == AppLifecycleState.inactive) {
+      cameraController.dispose();
+    } else if (state == AppLifecycleState.resumed) {
+      _onNewCameraSelected(cameraController.description);
     }
   }
 
   @override
-  void dispose() async {
-    super.dispose();
-    // await controller?.stopImageStream();
-    await widget.controller?.dispose();
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    controller?.dispose();
     eventListener.stop();
+    super.dispose();
   }
 
-  void _callControllerCreated() {
-    if (widget.onControllerCreated != null) {
-      widget.onControllerCreated!(widget.controller!);
+  void _onNewCameraSelected(CameraDescription cameraDescription) async {
+    if (controller != null) {
+      await controller!.dispose();
     }
-  }
 
-  Future<void> _startImageDataListening() async {
-    if (!widget.controller!.value.isStreamingImages) {
-      await widget.controller?.startImageStream(_processCameraImage);
+    controller = CameraController(
+      cameraDescription,
+      widget.resolution,
+      enableAudio: false,
+      imageFormatGroup:
+          isAndroid ? ImageFormatGroup.yuv420 : ImageFormatGroup.bgra8888,
+    );
+
+    try {
+      await controller?.initialize();
+      controller?.startImageStream(_processCameraImage);
+    } on CameraException catch (e) {
+      _showCameraException(e);
     }
+
+    controller?.addListener(() {
+      if (mounted) setState(() {});
+    });
+
+    if (mounted) {
+      setState(() {});
+    }
+    widget.onControllerCreated?.call(controller!);
   }
 
   void _showCameraException(CameraException e) {
     logError(e.code, e.description);
+    showInSnackBar('Error: ${e.code}\n${e.description}');
   }
+
+  void showInSnackBar(String message) {}
 
   void logError(String code, String? message) {
     if (message != null) {
@@ -153,6 +173,7 @@ class _ZXingCameraState extends State<ZXingCamera> {
             FlutterBeep.beep();
           }
           widget.onScan(result);
+          setState(() {});
           await Future.delayed(widget.resolveDelay);
         }
       } on FileSystemException catch (e) {
@@ -163,7 +184,6 @@ class _ZXingCameraState extends State<ZXingCamera> {
       await Future.delayed(widget.scanPeriod);
       _isProcessing = false;
     }
-    return;
   }
 
   /// Runs inference in another isolate
@@ -179,79 +199,58 @@ class _ZXingCameraState extends State<ZXingCamera> {
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
     final cropSize = min(size.width, size.height) * widget.cropPercent;
-    _notPresentThenNewController();
-    Widget cameraView = Stack(
+    return Stack(
       children: [
         // Camera preview
         Center(child: _cameraPreviewWidget(cropSize)),
       ],
     );
-    final controllerInitialized = widget.controller!.value.isInitialized;
-    if (controllerInitialized) {
-      try {
-        _startImageDataListening();
-      } on CameraException catch (e) {
-        _showCameraException(e);
-      }
-      _callControllerCreated();
-      return cameraView;
-    }
-    return FutureBuilder<Widget>(future: () async {
-      try {
-        await _initController();
-        _startImageDataListening();
-      } on CameraException catch (e) {
-        _showCameraException(e);
-      }
-      _callControllerCreated();
-      return cameraView;
-    }(), builder: (ctx, shot) {
-      if (shot.connectionState == ConnectionState.done && shot.hasData) {
-        return shot.data!;
-      } else {
-        return const Center(child: CircularProgressIndicator());
-      }
-    });
   }
 
   // Display the preview from the camera.
   Widget _cameraPreviewWidget(double cropSize) {
-    widget.scannerOverlay ??= ScannerOverlay(
-      borderColor: Theme.of(context).primaryColor,
-      overlayColor: const Color.fromRGBO(0, 0, 0, 0.5),
-      borderRadius: 1,
-      borderLength: 16,
-      borderWidth: 8,
-      cutOutSize: cropSize,
-    );
-    widget.scannerOverlayWidget ??= Container(
-      decoration: ShapeDecoration(
-        shape: widget.scannerOverlay!,
-      ),
-    );
-
-    final size = MediaQuery.of(context).size;
-    var cameraMaxSize = max(size.width, size.height);
-    return Stack(
-      children: [
-        SizedBox(
-          width: cameraMaxSize,
-          height: cameraMaxSize,
-          child: ClipRRect(
-            child: OverflowBox(
-              alignment: Alignment.center,
-              child: FittedBox(
-                fit: BoxFit.cover,
-                child: SizedBox(
-                  width: cameraMaxSize,
-                  child: CameraPreview(widget.controller!),
+    final CameraController? cameraController = controller;
+    if (cameraController == null || !cameraController.value.isInitialized) {
+      return const CircularProgressIndicator();
+    } else {
+      widget.scannerOverlay ??= ScannerOverlay(
+        borderColor: Theme.of(context).primaryColor,
+        overlayColor: const Color.fromRGBO(0, 0, 0, 0.5),
+        borderRadius: 1,
+        borderLength: 16,
+        borderWidth: 8,
+        cutOutSize: cropSize,
+      );
+      widget.scannerOverlayWidget ??= Container(
+        decoration: ShapeDecoration(
+          shape: widget.scannerOverlay!,
+        ),
+      );
+      final size = MediaQuery.of(context).size;
+      var cameraMaxSize = max(size.width, size.height);
+      return Stack(
+        children: [
+          SizedBox(
+            width: cameraMaxSize,
+            height: cameraMaxSize,
+            child: ClipRRect(
+              child: OverflowBox(
+                alignment: Alignment.center,
+                child: FittedBox(
+                  fit: BoxFit.cover,
+                  child: SizedBox(
+                    width: cameraMaxSize,
+                    child: CameraPreview(
+                      cameraController,
+                    ),
+                  ),
                 ),
               ),
             ),
           ),
-        ),
-        widget.showCroppingRect ? widget.scannerOverlayWidget! : Container()
-      ],
-    );
+          widget.showCroppingRect ? widget.scannerOverlayWidget! : Container()
+        ],
+      );
+    }
   }
 }
