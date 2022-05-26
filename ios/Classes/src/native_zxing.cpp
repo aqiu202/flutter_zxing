@@ -17,12 +17,6 @@ extern "C"
         return "1.3.0";
     }
 
-    std::string wstring2string(std::wstring input)
-    {
-        std::wstring_convert<std::codecvt_utf8<wchar_t>> converter;
-        return converter.to_bytes(input);
-    }
-
     FUNCTION_ATTRIBUTE
     struct CodeResult readBarcode(char *bytes, int format, int width, int height, int cropWidth, int cropHeight, int logEnabled)
     {
@@ -45,7 +39,8 @@ extern "C"
         if (result.isValid())
         {
             code.isValid = result.isValid();
-            std::string text = wstring2string(result.text());
+            std::wstring_convert<std::codecvt_utf8<wchar_t>> converter;
+            std::string text = converter.to_bytes(result.text());
             code.text = new char[text.length() + 1];
             strcpy(code.text, text.c_str());
             code.format = Format(static_cast<int>(result.format()));
@@ -85,7 +80,8 @@ extern "C"
             if (result.isValid())
             {
                 code.isValid = result.isValid();
-                std::string text = wstring2string(result.text());
+                std::wstring_convert<std::codecvt_utf8<wchar_t>> converter;
+                std::string text = converter.to_bytes(result.text());
                 code.text = new char[text.length() + 1];
                 strcpy(code.text, text.c_str());
                 code.format = Format(static_cast<int>(result.format()));
