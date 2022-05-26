@@ -133,5 +133,4 @@ extern "C"
         }
         return result;
     }
-
 }

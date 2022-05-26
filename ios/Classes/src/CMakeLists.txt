@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.10)
 project(flutter_zxing LANGUAGES C CXX)
 
 set(CPP_PATH ${CMAKE_SOURCE_DIR})
-set(ZXING_PATH ${CPP_PATH}/src)
+set(ZXING_PATH ${CPP_PATH}/zxing/src)
 
 add_library(
     flutter_zxing

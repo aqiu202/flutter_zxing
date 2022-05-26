@@ -53,7 +53,7 @@ android {
 
     externalNativeBuild {
         cmake {
-            path "../ffi/zxing/CMakeLists.txt"
+            path "../ios/Classes/src/CMakeLists.txt"
         }
     }
 }
