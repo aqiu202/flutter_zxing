@@ -12,6 +12,7 @@ import 'generated_bindings.dart';
 export 'generated_bindings.dart';
 export 'image_converter.dart';
 export 'scanner_overlay.dart';
+export 'zxing_camera.dart';
 
 class FlutterZxing {
   static const MethodChannel _channel = MethodChannel('flutter_zxing');
